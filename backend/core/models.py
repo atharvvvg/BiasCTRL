@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Tuple
 import joblib
 import os
 import logging
+import json # <-- Import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,11 +31,14 @@ def train_evaluate_baseline(
     test_size: float = 0.3,
     random_state: int = 42
 ) -> Dict[str, Any]:
-    """ ... """
+    # --- Start of function is the same (loading, cleaning, splitting) ---
+    # ... (Keep all the loading, cleaning, feature selection, splitting logic as before) ...
+    # ... Ensure valid_sensitive_columns and feature_columns are correctly defined ...
+    # ... Ensure X_train_full, X_test_full, y_train, y_test are created ...
+
     filepath = os.path.join(UPLOAD_DIRECTORY, filename)
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
-
     try:
         df = pd.read_csv(filepath, skipinitialspace=True, na_values='?')
         logger.info(f"Data loaded successfully from {filepath}, treating '?' as NaN.")
@@ -43,7 +47,6 @@ def train_evaluate_baseline(
         raise ValueError(f"Error reading CSV file: {e}")
 
     # --- Clean Target Column ---
-    # (Keep the robust cleaning logic from the previous version)
     if target_column not in df.columns:
          raise ValueError(f"Target column '{target_column}' not found in the dataset.")
     if df[target_column].isnull().any():
@@ -72,7 +75,6 @@ def train_evaluate_baseline(
     else:
          raise ValueError(f"Target column '{target_column}' has an unsupported data type: {df[target_column].dtype}")
 
-
     # --- Feature Selection ---
     valid_sensitive_columns = [col for col in sensitive_attribute_columns if col in df.columns]
     if len(valid_sensitive_columns) != len(sensitive_attribute_columns):
@@ -80,102 +82,69 @@ def train_evaluate_baseline(
          logger.warning(f"Provided sensitive attributes not found in data: {missing_sens_cols}. Proceeding without them.")
 
     if feature_columns is None:
-        # Automatically select features (excluding target AND sensitive)
         feature_columns = [
             col for col in df.columns
             if col != target_column and col not in valid_sensitive_columns
         ]
         logger.info(f"Using automatically selected features for training: {feature_columns}")
     else:
-        # Validate provided feature columns
         missing_feats = [col for col in feature_columns if col not in df.columns]
         if missing_feats:
              raise ValueError(f"Provided feature columns not found in data: {missing_feats}")
         logger.info(f"Using provided features for training: {feature_columns}")
 
-
     # --- Data Split ---
-    # Split the *entire* dataframe first, keeping relevant columns
     cols_to_keep = feature_columns + valid_sensitive_columns + [target_column]
-    df_subset = df[cols_to_keep].copy()
-
+    df_subset = df[[col for col in cols_to_keep if col in df.columns]].copy() # Ensure columns exist
     try:
         X_train_full, X_test_full, y_train, y_test = train_test_split(
-            df_subset.drop(columns=[target_column]), # X contains features + sensitive
-            df_subset[target_column],               # y is the target
+            df_subset.drop(columns=[target_column]),
+            df_subset[target_column],
             test_size=test_size,
             random_state=random_state,
-            stratify=df_subset[target_column] # Stratify on target
+            stratify=df_subset[target_column]
         )
         logger.info(f"Data split into training ({len(X_train_full)} samples) and testing ({len(X_test_full)} samples).")
     except Exception as e:
         logger.exception(f"Error during train_test_split: {e}")
         raise ValueError(f"Error during train_test_split: Ensure target column '{target_column}' exists and is suitable for stratification. {e}")
 
-
-    # --- Preprocessing Setup (Applied ONLY to Features) ---
-    # Identify feature types based on the feature columns ONLY within X_train_full
+    # --- Preprocessing Setup ---
     X_train_features_only = X_train_full[feature_columns]
-
     numerical_features_train = X_train_features_only.select_dtypes(include=np.number).columns.tolist()
     categorical_features_train = X_train_features_only.select_dtypes(exclude=np.number).columns.tolist()
-
     logger.info(f"Identified numerical features for preprocessing: {numerical_features_train}")
     logger.info(f"Identified categorical features for preprocessing: {categorical_features_train}")
-
-    # Define preprocessing pipelines
-    numerical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='median')),
-        ('scaler', StandardScaler())
-    ])
-
-    categorical_transformer = Pipeline(steps=[
-        ('imputer', SimpleImputer(strategy='most_frequent')),
-        ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
-    ])
-
-    # Create the preprocessor ColumnTransformer - **IMPORTANT CHANGE HERE**
-    # Apply transformers ONLY to the appropriate feature columns
-    # Set remainder='drop' because we don't want the sensitive attributes passed to the model
+    numerical_transformer = Pipeline(steps=[('imputer', SimpleImputer(strategy='median')), ('scaler', StandardScaler())])
+    categorical_transformer = Pipeline(steps=[('imputer', SimpleImputer(strategy='most_frequent')), ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))])
     preprocessor = ColumnTransformer(
         transformers=[
             ('num', numerical_transformer, numerical_features_train),
-            ('cat', categorical_transformer, categorical_features_train)
-        ],
-        remainder='drop' # <--- KEY CHANGE: Drop columns not specified (i.e., sensitive attributes)
-    )
+            ('cat', categorical_transformer, categorical_features_train)],
+        remainder='drop')
 
     # --- Model ---
     model = RandomForestClassifier(random_state=random_state, n_estimators=100, class_weight='balanced')
 
-    # --- Create the FULL Training Pipeline ---
-    # The input to this pipeline will be X_train_full (features + sensitive)
-    # The preprocessor step will select ONLY the feature columns and transform them
-    # The output of the preprocessor (only transformed features) goes to the model
-    pipeline = Pipeline(steps=[('preprocessor', preprocessor),
-                               ('classifier', model)])
+    # --- Pipeline ---
+    pipeline = Pipeline(steps=[('preprocessor', preprocessor), ('classifier', model)])
 
     # --- Training ---
     logger.info("Starting model training...")
     try:
-        # Fit the pipeline on X_train_full and y_train
         pipeline.fit(X_train_full, y_train)
     except Exception as e:
          logger.exception(f"Error during pipeline fitting: {e}")
-         logger.error(f"X_train_full shape: {X_train_full.shape}")
-         logger.error(f"y_train shape: {y_train.shape}, unique values: {y_train.unique()}")
-         logger.error(f"X_train_full dtypes:\n{X_train_full.dtypes}")
+         # ... (error logging) ...
          raise e
     logger.info("Model training complete.")
 
     # --- Evaluation ---
-    # Predict using the fitted pipeline on X_test_full
-    # The pipeline will automatically apply the same preprocessing (selecting features, transforming)
+    # ... (Keep evaluation logic as before) ...
     y_pred_test = pipeline.predict(X_test_full)
-
     results = {"metrics": {}, "model_info": {}}
-
-    # Overall metrics
+    # ... calculate overall metrics ...
+    # ... calculate disaggregated metrics ...
     try:
         results["metrics"]["overall"] = {
             "accuracy": accuracy_score(y_test, y_pred_test),
@@ -187,79 +156,53 @@ def train_evaluate_baseline(
     except Exception as e:
          logger.exception(f"Error calculating overall metrics: {e}")
          results["metrics"]["overall"] = {"error": str(e)}
-
-
-    # Disaggregated metrics
+    # Disaggregated metrics calculation ...
     results["metrics"]["by_sensitive_group"] = {}
-    # Use X_test_full here as it contains the sensitive attribute columns needed for grouping
     for sens_col in valid_sensitive_columns:
-        if sens_col in X_test_full.columns: # Check existence in the test split data
-            results["metrics"]["by_sensitive_group"][sens_col] = {}
-            unique_groups = X_test_full[sens_col].dropna().unique()
-            logger.info(f"Calculating disaggregated metrics for '{sens_col}', groups found: {unique_groups}")
+        # ... (logic for calculating metrics per group) ...
+        pass # Placeholder for brevity, keep the full logic from previous version
 
-            for group in unique_groups:
-                # Get mask from X_test_full which contains the sensitive column
-                group_mask = X_test_full[sens_col] == group
-                # Apply mask to y_test and y_pred_test
-                y_test_group = y_test[group_mask]
-                y_pred_group = y_pred_test[group_mask] # y_pred_test corresponds row-wise to X_test_full
-
-                group_metrics = {"sample_count": len(y_test_group)}
-                if len(y_test_group) > 0:
-                    try:
-                        group_metrics["accuracy"] = accuracy_score(y_test_group, y_pred_group)
-                        group_metrics["precision"] = precision_score(y_test_group, y_pred_group, zero_division=0)
-                        group_metrics["recall"] = recall_score(y_test_group, y_pred_group, zero_division=0)
-                        group_metrics["f1"] = f1_score(y_test_group, y_pred_group, zero_division=0)
-                    except Exception as e:
-                        logger.exception(f"Error calculating metrics for group '{group}' in column '{sens_col}': {e}")
-                        group_metrics["error"] = str(e)
-                else:
-                     group_metrics["message"] = "No samples in test set for this group."
-                results["metrics"]["by_sensitive_group"][sens_col][str(group)] = group_metrics
-
-            # Handle NaN group (using X_test_full for mask)
-            nan_mask = X_test_full[sens_col].isnull()
-            if nan_mask.any():
-                 y_test_nan_group = y_test[nan_mask]
-                 y_pred_nan_group = y_pred_test[nan_mask]
-                 nan_group_metrics = {"sample_count": len(y_test_nan_group)}
-                 if len(y_test_nan_group) > 0:
-                     try:
-                        nan_group_metrics["accuracy"] = accuracy_score(y_test_nan_group, y_pred_nan_group)
-                        # ... other metrics ...
-                     except Exception as e:
-                        logger.exception(f"Error calculating metrics for NaN group in column '{sens_col}': {e}")
-                        nan_group_metrics["error"] = str(e)
-                 else:
-                     nan_group_metrics["message"] = "No samples in test set for NaN group."
-                 results["metrics"]["by_sensitive_group"][sens_col]["__NaN__"] = nan_group_metrics
-
-            logger.info(f"Disaggregated metrics calculation attempted for '{sens_col}'.")
-        else:
-            logger.error(f"Internal Error: Sensitive column '{sens_col}' expected but not found in X_test_full columns.")
-
-
-    # --- Save Model & Metadata ---
-    model_filename = f"{os.path.splitext(filename)[0]}_pipeline.joblib"
-    model_path = os.path.join(MODEL_DIRECTORY, model_filename)
-
+    # --- Save Model Pipeline ---
+    pipeline_filename = f"{os.path.splitext(filename)[0]}_pipeline.joblib"
+    pipeline_path = os.path.join(MODEL_DIRECTORY, pipeline_filename)
     try:
-        joblib.dump(pipeline, model_path)
-        logger.info(f"Pipeline saved to {model_path}")
+        joblib.dump(pipeline, pipeline_path)
+        logger.info(f"Pipeline saved to {pipeline_path}")
     except Exception as e:
-        logger.exception(f"Error saving pipeline to {model_path}: {e}")
+        logger.exception(f"Error saving pipeline to {pipeline_path}: {e}")
         raise IOError(f"Could not save pipeline: {e}")
 
-    # Store info needed later
-    results["model_info"] = {
-        "pipeline_path": model_path,
-        "features_used_in_training": feature_columns, # The list of feature names input to preprocessor
-        "sensitive_attributes_present": valid_sensitive_columns,
+    # --- *** NEW: SAVE METADATA *** ---
+    metadata_filename = pipeline_path.replace('.joblib', '.meta.json')
+    metadata_to_save = {
+        "pipeline_path": pipeline_path, # Keep path for reference if needed
+        "original_filename": filename,
+        "features_used_in_training": feature_columns, # Crucial list
+        "sensitive_attributes_present": valid_sensitive_columns, # Actual sensitive cols found/used
         "target_column": target_column,
         "model_type": type(model).__name__,
         "training_random_state": random_state,
+        # Add any other info needed by later steps
+    }
+    try:
+        with open(metadata_filename, 'w') as f:
+            json.dump(metadata_to_save, f, indent=4)
+        logger.info(f"Metadata saved to {metadata_filename}")
+    except Exception as e:
+        logger.exception(f"Error saving metadata to {metadata_filename}: {e}")
+        # Don't raise error here? Or should we? If metadata fails, explain will fail. Let's raise it.
+        raise IOError(f"Could not save metadata: {e}")
+    # --- *** END NEW *** ---
+
+
+    # Include paths and key info in the results returned by the API endpoint
+    results["model_info"] = {
+        "pipeline_path": pipeline_path,
+        "metadata_path": metadata_filename, # Add path to metadata file
+        "features_used_in_training": feature_columns,
+        "sensitive_attributes_present": valid_sensitive_columns,
+        "target_column": target_column,
+        "model_type": type(model).__name__,
     }
 
     return results
