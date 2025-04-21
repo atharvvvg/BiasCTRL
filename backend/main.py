@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Ethical AI Bias Mitigation Workbench API",
     description="Phase 1: Core backend for data analysis, model training, fairness & explainability.",
-    version="0.1.0",
+    version="0.1.1", # Incremented version
 )
 
 UPLOAD_DIRECTORY = "uploads"
@@ -41,6 +41,16 @@ def get_safe_filename(filename: str) -> str:
     safe_basename = "".join(c if c.isalnum() else "_" for c in basename)
     return f"{safe_basename}{ext}"
 
+# --- Helper Function to Parse Sensitive Attributes String ---
+def parse_sensitive_attributes(sensitive_attributes_str: str) -> List[str]:
+    """Parses comma-separated string into a list of stripped strings."""
+    if not sensitive_attributes_str: # Handle empty string case
+        return []
+    sensitive_attribute_columns = [s.strip() for s in sensitive_attributes_str.split(',') if s.strip()]
+    if not sensitive_attribute_columns:
+        raise ValueError("Sensitive attribute columns string was provided but resulted in an empty list after parsing.")
+    return sensitive_attribute_columns
+
 # --- API Endpoints ---
 
 @app.post("/upload", summary="Upload CSV dataset")
@@ -54,119 +64,132 @@ async def upload_dataset(file: UploadFile = File(...)):
         with open(file_location, "wb+") as file_object:
             shutil.copyfileobj(file.file, file_object)
         logger.info(f"File '{safe_filename}' uploaded successfully.")
+        # Clear any old cache related to this filename on new upload
+        if safe_filename in analysis_results_cache:
+            del analysis_results_cache[safe_filename]
+        if safe_filename in model_results_cache:
+            del model_results_cache[safe_filename]
         return JSONResponse(
             status_code=200,
             content={"message": "File uploaded successfully", "filename": safe_filename}
         )
     except Exception as e:
-        logger.error(f"Error uploading file {safe_filename}: {e}")
+        logger.exception(f"Error uploading file {safe_filename}: {e}") # Use logger.exception for stacktrace
         raise HTTPException(status_code=500, detail=f"Could not upload file: {e}")
     finally:
-        await file.close() # Ensure file handle is closed
+        if file and not file.file.closed: # Check if file exists and is not closed before closing
+             await file.close() # Ensure file handle is closed
+
 
 @app.post("/analyze", summary="Analyze uploaded dataset")
-async def analyze_dataset(
+@app.post("/analyze", summary="Analyze uploaded dataset")
+async def analyze_dataset_endpoint(
     filename: str = Form(...),
     target_column: str = Form(...),
-    sensitive_attribute_columns: List[str] = Form(...) # Input as multiple form fields with same name
+    # --- CHANGE THIS LINE ---
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)") # Renamed parameter back, kept type str
 ):
     """
-    Performs initial data analysis on the specified uploaded CSV file.
-    Identifies target and sensitive attributes.
+    Performs initial data analysis... Input sensitive attributes as a comma-separated string.
     """
     try:
-        logger.info(f"Analyzing data for file: {filename}, target: {target_column}, sensitive: {sensitive_attribute_columns}")
-        results = load_and_analyze_data(filename, target_column, sensitive_attribute_columns)
-        # Store results in cache (simple approach)
+        # --- Parse the input string using the helper ---
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns) # Parse the input variable
+
+        logger.info(f"Analyzing data for file: {filename}, target: {target_column}, sensitive: {parsed_sensitive_columns}") # Use the parsed list
+        results = load_and_analyze_data(filename, target_column, parsed_sensitive_columns) # Pass the parsed list
         analysis_results_cache[filename] = results
         logger.info(f"Analysis complete for {filename}.")
         return JSONResponse(status_code=200, content=results)
+    # ... (rest of the function and error handling remains the same) ...
+    except ValueError as e: # Catch parsing errors too
+        logger.error(f"Analysis failed due to value error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         logger.error(f"Analysis failed: {e}")
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        logger.error(f"Analysis failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error during analysis: {e}")
+        logger.exception(f"Unexpected error during analysis: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-
 
 @app.post("/train_baseline", summary="Train and evaluate baseline model")
 async def train_baseline_model_endpoint(
     filename: str = Form(...),
     target_column: str = Form(...),
-    sensitive_attribute_columns: List[str] = Form(...)
-    # Optional: Add feature_columns: List[str] = Form(None) if needed
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)")
 ):
     """
-    Trains a baseline classification model on the specified data,
-    evaluates performance (overall and per group), and saves the model.
+    Trains a baseline classification model... Input sensitive attributes as a comma-separated string.
     """
     try:
-        logger.info(f"Training baseline model for file: {filename}, target: {target_column}, sensitive: {sensitive_attribute_columns}")
+        # --- Parse the input string using the helper ---
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+
+        logger.info(f"Training baseline model for file: {filename}, target: {target_column}, sensitive: {parsed_sensitive_columns}")
         results = train_evaluate_baseline(
             filename=filename,
             target_column=target_column,
-            sensitive_attribute_columns=sensitive_attribute_columns
-            # Pass other parameters like feature_columns if added
+            sensitive_attribute_columns=parsed_sensitive_columns # Pass the parsed list
         )
-        # Store model path and other info for later use
-        model_results_cache[filename] = results # Overwrites previous if same filename used
+        model_results_cache[filename] = results
         logger.info(f"Baseline model training complete for {filename}.")
         return JSONResponse(status_code=200, content=results)
+    # ... (rest of the function and error handling remains the same) ...
+    except ValueError as e: # Catch parsing errors too
+        logger.error(f"Model training failed due to value error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         logger.error(f"Model training failed: {e}")
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        logger.error(f"Model training failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error during model training: {e}")
+        logger.exception(f"Unexpected error during model training: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
-
 
 @app.post("/calculate_fairness", summary="Calculate fairness metrics for trained model")
 async def calculate_fairness_endpoint(
     filename: str = Form(...), # Filename of the *original* data used for training/test split reference
     target_column: str = Form(...),
-    sensitive_attribute_columns: List[str] = Form(...)
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)")
 ):
     """
-    Calculates fairness metrics (like Demographic Parity, Equalized Odds difference)
-    for the previously trained baseline model associated with the filename.
-    Requires the model to have been trained via /train_baseline first.
+    Calculates fairness metrics... Input sensitive attributes as a comma-separated string...
     """
     if filename not in model_results_cache:
-         raise HTTPException(status_code=404, detail=f"No trained model found for filename: {filename}. Please run /train_baseline first.")
-
-    model_info = model_results_cache[filename]['model_info']
+         raise HTTPException(status_code=404, detail=f"No trained model found associated with filename: '{filename}'. Please run /train_baseline first.")
+    # ... (rest of the checks for model_info and pipeline_path) ...
+    model_info = model_results_cache[filename].get('model_info', {})
     pipeline_path = model_info.get('pipeline_path')
-
     if not pipeline_path or not os.path.exists(pipeline_path):
-         raise HTTPException(status_code=404, detail=f"Model pipeline path not found or invalid for {filename}.")
+         raise HTTPException(status_code=404, detail=f"Model pipeline path not found or file does not exist for {filename} at {pipeline_path}. Was training successful?")
 
     try:
-        logger.info(f"Calculating fairness for model from {filename}, pipeline: {pipeline_path}")
-        # Use the same filename for test data source - fairness function re-reads it
+        # --- Parse the input string using the helper ---
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+
+        # --- Optional: Check against saved sensitive columns (as before) ---
+        saved_sensitive_cols = model_info.get('sensitive_attributes_present', [])
+        if set(parsed_sensitive_columns) != set(saved_sensitive_cols):
+            logger.warning(f"Sensitive attributes provided {parsed_sensitive_columns} do not exactly match those used during training {saved_sensitive_cols} for file {filename}.")
+
+        logger.info(f"Calculating fairness for model from {filename}, pipeline: {pipeline_path}, sensitive: {parsed_sensitive_columns}")
         results = calculate_fairness_metrics(
             pipeline_path=pipeline_path,
-            filename=filename, # Use the original filename to load test data within the function
+            filename=filename,
             target_column=target_column,
-            sensitive_attribute_columns=sensitive_attribute_columns
+            sensitive_attribute_columns=parsed_sensitive_columns # Pass the parsed list
         )
-        # Optionally merge fairness results into the cache
         model_results_cache[filename]['fairness'] = results
         logger.info(f"Fairness calculation complete for {filename}.")
         return JSONResponse(status_code=200, content=results)
+    # ... (rest of the function and error handling remains the same) ...
+    except ValueError as e: # Catch parsing errors too
+        logger.error(f"Fairness calculation failed due to value error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         logger.error(f"Fairness calculation failed: {e}")
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        logger.error(f"Fairness calculation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error during fairness calculation: {e}")
+        logger.exception(f"Unexpected error during fairness calculation: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 
@@ -174,46 +197,45 @@ async def calculate_fairness_endpoint(
 async def explain_model_endpoint(
     filename: str = Form(...), # Filename of the original data
     target_column: str = Form(...),
-    sensitive_attribute_columns: List[str] = Form(...),
-    n_samples: int = Form(100) # Number of samples for SHAP background/explanation
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)"),
+    n_samples: int = Form(100, description="Number of samples for SHAP background/explanation")
 ):
     """
-    Generates SHAP explanations (global feature importance) for the
-    previously trained baseline model associated with the filename.
+    Generates SHAP explanations... Input sensitive attributes as a comma-separated string.
     """
     if filename not in model_results_cache:
-         raise HTTPException(status_code=404, detail=f"No trained model found for filename: {filename}. Please run /train_baseline first.")
-
-    model_info = model_results_cache[filename]['model_info']
+         raise HTTPException(status_code=404, detail=f"No trained model found associated with filename: '{filename}'. Please run /train_baseline first.")
+    # ... (rest of the checks for model_info and pipeline_path) ...
+    model_info = model_results_cache[filename].get('model_info', {})
     pipeline_path = model_info.get('pipeline_path')
-
     if not pipeline_path or not os.path.exists(pipeline_path):
-         raise HTTPException(status_code=404, detail=f"Model pipeline path not found or invalid for {filename}.")
+         raise HTTPException(status_code=404, detail=f"Model pipeline path not found or file does not exist for {filename} at {pipeline_path}. Was training successful?")
 
     try:
-        logger.info(f"Explaining model from {filename}, pipeline: {pipeline_path}")
+        # --- Parse the input string using the helper ---
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+
+        logger.info(f"Explaining model from {filename}, pipeline: {pipeline_path}, sensitive: {parsed_sensitive_columns}")
         results = explain_baseline_model(
             pipeline_path=pipeline_path,
-            filename=filename, # Original data file used for sampling/background
+            filename=filename,
             target_column=target_column,
-            sensitive_attribute_columns=sensitive_attribute_columns,
+            sensitive_attribute_columns=parsed_sensitive_columns, # Pass the parsed list
             n_samples=n_samples
         )
-        # Optionally merge explanation results into the cache
         model_results_cache[filename]['explanation'] = results
         logger.info(f"Model explanation complete for {filename}.")
         return JSONResponse(status_code=200, content=results)
+    # ... (rest of the function and error handling remains the same) ...
+    except ValueError as e: # Catch parsing errors too
+        logger.error(f"Model explanation failed due to value error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         logger.error(f"Model explanation failed: {e}")
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        logger.error(f"Model explanation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error during model explanation: {e}")
-        # SHAP can sometimes have cryptic errors, provide generic message
+        logger.exception(f"Unexpected error during model explanation: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during model explanation: {e}")
-
 
 # --- Root Endpoint ---
 @app.get("/", summary="Root endpoint", include_in_schema=False)

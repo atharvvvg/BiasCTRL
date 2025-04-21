@@ -21,5 +21,4 @@ uploads/
 .DS_Store
 Thumbs.db
 
-# Secrets (if any later)
-.env
+models_cache/
