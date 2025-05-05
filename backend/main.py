@@ -9,7 +9,7 @@ import json # Keep json import if needed elsewhere
 
 # Import core functions
 from core.analysis import load_and_analyze_data
-from core.models import train_evaluate_baseline
+from core.models import train_evaluate_baseline, train_evaluate_reweighed
 from core.fairness import calculate_fairness_metrics
 from core.explainability import explain_baseline_model
 
@@ -198,6 +198,49 @@ async def explain_model_endpoint(
     except Exception as e:
         logger.exception(f"Unexpected error during model explanation: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during model explanation: {e}")
+
+
+@app.post("/mitigate_reweigh", summary="Train model using Reweighing mitigation")
+async def mitigate_reweigh_endpoint(
+    filename: str = Form(...),
+    target_column: str = Form(...),
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)"),
+    reweigh_attribute: str = Form(..., description="The specific sensitive attribute to base reweighing on (must be one of the columns above)")
+):
+    """
+    Trains a new model using Reweighing mitigation based on the specified attribute.
+    Returns the performance and fairness metrics of the *mitigated* model.
+    """
+    try:
+        # Parse sensitive attributes
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+        if reweigh_attribute not in parsed_sensitive_columns:
+             # Check if the target attribute is actually in the list provided
+              raise HTTPException(status_code=400, detail=f"Reweigh attribute '{reweigh_attribute}' must be one of the provided sensitive columns: {parsed_sensitive_columns}")
+
+        logger.info(f"Starting Reweighing mitigation for: {filename}, target: {target_column}, sensitive: {parsed_sensitive_columns}, reweigh_on: {reweigh_attribute}")
+
+        # Call the new core function
+        results = train_evaluate_reweighed(
+            filename=filename,
+            target_column=target_column,
+            sensitive_attribute_columns=parsed_sensitive_columns,
+            reweigh_attribute=reweigh_attribute # Pass the specific attribute
+        )
+
+        logger.info(f"Reweighing mitigation training complete for {filename} based on {reweigh_attribute}.")
+        # Return the results for the mitigated model
+        return JSONResponse(status_code=200, content=results)
+
+    except FileNotFoundError as e:
+        logger.error(f"Reweighing failed: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        logger.error(f"Reweighing failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Unexpected error during Reweighing mitigation: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 
 # --- Root Endpoint (Keep) ---
