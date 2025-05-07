@@ -6,3 +6,4 @@ fairlearn>=0.8.0
 shap
 joblib
 python-multipart
+imbalanced-learn
