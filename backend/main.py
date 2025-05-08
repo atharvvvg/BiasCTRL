@@ -6,10 +6,8 @@ import os
 import shutil
 import logging
 import json
-
-# Import core functions
 from core.analysis import load_and_analyze_data
-from core.models import train_evaluate_baseline, train_evaluate_reweighed
+from core.models import train_evaluate_baseline, train_evaluate_reweighed, train_evaluate_oversampled
 from core.fairness import calculate_fairness_metrics
 from core.explainability import explain_baseline_model
 
@@ -19,7 +17,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Ethical AI Bias Mitigation Workbench API",
     description="Phase 1: Core backend with flexible fairness/explainability.",
-    version="0.1.3", # Incremented version
+    version="0.1.4", # Incremented version
 )
 
 UPLOAD_DIRECTORY = "uploads"
@@ -40,11 +38,17 @@ def parse_sensitive_attributes(sensitive_attributes_str: str) -> List[str]:
         raise ValueError("Sensitive attribute columns string was provided but resulted in an empty list after parsing.")
     return sensitive_attribute_columns
 
+# --- REMOVE THE train_evaluate_oversampled FUNCTION DEFINITION FROM HERE ---
+# --- IT SHOULD ONLY BE IN core/models.py ---
+
+# def train_evaluate_oversampled( ... ): # <--- DELETE THIS ENTIRE FUNCTION BLOCK IF IT'S HERE
+    # ...
+    # return results
+
 # --- API Endpoints ---
 
 @app.post("/upload", summary="Upload CSV dataset")
 async def upload_dataset(file: UploadFile = File(...)):
-    # ... (no changes here) ...
     safe_filename = get_safe_filename(file.filename)
     file_location = os.path.join(UPLOAD_DIRECTORY, safe_filename)
     try:
@@ -69,7 +73,6 @@ async def analyze_dataset_endpoint(
     target_column: str = Form(...),
     sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)")
 ):
-    # ... (no changes here) ...
     try:
         parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
         logger.info(f"Analyzing data for file: {filename}, target: {target_column}, sensitive: {parsed_sensitive_columns}")
@@ -92,7 +95,6 @@ async def train_baseline_model_endpoint(
     target_column: str = Form(...),
     sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)")
 ):
-    # ... (no changes here) ...
     try:
         parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
         logger.info(f"Training baseline model for file: {filename}, target: {target_column}, sensitive: {parsed_sensitive_columns}")
@@ -121,7 +123,6 @@ async def mitigate_reweigh_endpoint(
     sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)"),
     reweigh_attribute: str = Form(..., description="The specific sensitive attribute to base reweighing on (must be one of the columns above)")
 ):
-    # ... (no changes here) ...
     try:
         parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
         if reweigh_attribute not in parsed_sensitive_columns:
@@ -145,7 +146,40 @@ async def mitigate_reweigh_endpoint(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 
-# --- MODIFIED /calculate_fairness Endpoint ---
+@app.post("/mitigate_oversample", summary="Train model using Random Oversampling mitigation")
+async def mitigate_oversample_endpoint(
+    filename: str = Form(...),
+    target_column: str = Form(...),
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender). Used for evaluation.")
+):
+    """
+    Trains a new model using Random Oversampling on the training data to balance target classes.
+    Returns the performance and fairness metrics of the *mitigated* model.
+    """
+    try:
+        parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+        logger.info(f"Starting Random Oversampling mitigation for: {filename}, target: {target_column}, sensitive_for_eval: {parsed_sensitive_columns}")
+
+        results = train_evaluate_oversampled( # This should be imported from core.models
+            filename=filename,
+            target_column=target_column,
+            sensitive_attribute_columns=parsed_sensitive_columns
+        )
+
+        logger.info(f"Random Oversampling mitigation training complete for {filename}.")
+        return JSONResponse(status_code=200, content=results)
+
+    except FileNotFoundError as e:
+        logger.error(f"Oversampling failed: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        logger.error(f"Oversampling failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Unexpected error during Oversampling mitigation: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+
+
 @app.post("/calculate_fairness", summary="Calculate fairness metrics for a trained model")
 async def calculate_fairness_endpoint(
     filename: str = Form(..., description="Filename of the *original* data used for evaluation (e.g., adult.csv)"),
@@ -153,39 +187,26 @@ async def calculate_fairness_endpoint(
     sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attribute column names (e.g., race,gender)"),
     pipeline_path_param: Optional[str] = Form(None, alias="pipeline_path", description="Optional: Full path to a specific .joblib pipeline file. If not provided, uses baseline path from 'filename'.") # Added optional parameter
 ):
-    """
-    Calculates fairness metrics for a trained model.
-    If `pipeline_path` is provided, it uses that specific model.
-    Otherwise, it assumes the baseline model associated with `filename`.
-    """
     actual_pipeline_path: str
-
     if pipeline_path_param:
-        # Use the provided path directly
         if not os.path.isabs(pipeline_path_param) and not pipeline_path_param.startswith(MODEL_DIRECTORY):
-            # Assume it's a relative path within MODEL_DIRECTORY if not absolute
             actual_pipeline_path = os.path.join(MODEL_DIRECTORY, os.path.basename(pipeline_path_param))
             logger.info(f"Using provided relative pipeline path, resolved to: {actual_pipeline_path}")
         else:
             actual_pipeline_path = pipeline_path_param
             logger.info(f"Using provided absolute pipeline path: {actual_pipeline_path}")
     else:
-        # Construct baseline pipeline path from filename
         base_pipeline_filename = f"{os.path.splitext(filename)[0]}_pipeline.joblib"
         actual_pipeline_path = os.path.join(MODEL_DIRECTORY, base_pipeline_filename)
         logger.info(f"No explicit pipeline_path provided, using baseline path: {actual_pipeline_path}")
-
-    # --- Check if the determined pipeline file exists ---
     if not os.path.exists(actual_pipeline_path):
          raise HTTPException(status_code=404, detail=f"Model pipeline file not found at '{actual_pipeline_path}'. Was the model trained successfully?")
-
     try:
         parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
         logger.info(f"Calculating fairness for model using pipeline: '{actual_pipeline_path}', data from '{filename}', sensitive: {parsed_sensitive_columns}")
-
         results = calculate_fairness_metrics(
-            pipeline_path=actual_pipeline_path, # Use the determined path
-            filename=filename, # Original data filename to load test data
+            pipeline_path=actual_pipeline_path,
+            filename=filename,
             target_column=target_column,
             sensitive_attribute_columns=parsed_sensitive_columns
         )
@@ -202,20 +223,13 @@ async def calculate_fairness_endpoint(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
 
-# --- MODIFIED /explain_model Endpoint (similar logic for pipeline_path) ---
 @app.post("/explain_model", summary="Explain a trained model using SHAP")
 async def explain_model_endpoint(
     filename: str = Form(..., description="Filename of the *original* data (needed if metadata is used for data loading, e.g., adult.csv)"),
     pipeline_path_param: Optional[str] = Form(None, alias="pipeline_path", description="Optional: Full path to a specific .joblib pipeline file. If not provided, uses baseline path from 'filename'."),
     n_samples: int = Form(100, description="Number of samples for SHAP background/explanation")
 ):
-    """
-    Generates SHAP explanations for a trained model.
-    If `pipeline_path` is provided, it uses that specific model.
-    Otherwise, it assumes the baseline model associated with `filename`.
-    """
     actual_pipeline_path: str
-
     if pipeline_path_param:
         if not os.path.isabs(pipeline_path_param) and not pipeline_path_param.startswith(MODEL_DIRECTORY):
             actual_pipeline_path = os.path.join(MODEL_DIRECTORY, os.path.basename(pipeline_path_param))
@@ -226,15 +240,12 @@ async def explain_model_endpoint(
         base_pipeline_filename = f"{os.path.splitext(filename)[0]}_pipeline.joblib"
         actual_pipeline_path = os.path.join(MODEL_DIRECTORY, base_pipeline_filename)
         logger.info(f"No explicit pipeline_path provided for explanation, using baseline path: {actual_pipeline_path}")
-
     if not os.path.exists(actual_pipeline_path):
          raise HTTPException(status_code=404, detail=f"Model pipeline file not found at '{actual_pipeline_path}'. Was the model trained successfully?")
-
     try:
-        # Note: explain_baseline_model now gets target/sensitive from metadata associated with pipeline_path
         logger.info(f"Explaining model using pipeline: '{actual_pipeline_path}'")
         results = explain_baseline_model(
-            pipeline_path=actual_pipeline_path, # Pass determined path
+            pipeline_path=actual_pipeline_path,
             n_samples=n_samples
         )
         logger.info(f"Model explanation complete for pipeline '{actual_pipeline_path}'.")
@@ -242,7 +253,7 @@ async def explain_model_endpoint(
     except ValueError as e:
         logger.error(f"Model explanation failed due to value error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
-    except FileNotFoundError as e: # Catch file not found (e.g., metadata or data file)
+    except FileNotFoundError as e:
         logger.error(f"Model explanation failed: {e}")
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -250,7 +261,68 @@ async def explain_model_endpoint(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during model explanation: {e}")
 
 
-# --- Root Endpoint (Keep) ---
+@app.post("/compare_models", summary="Compare performance and fairness of two models")
+async def compare_models_endpoint(
+    # --- RENAMED PARAMETERS, REMOVED alias ---
+    baseline_pipeline_path: str = Form(..., description="Path to the baseline .joblib pipeline file (e.g., models_cache/adult_pipeline.joblib)"),
+    mitigated_pipeline_path: str = Form(..., description="Path to the mitigated .joblib pipeline file (e.g., models_cache/adult_reweighed_race_pipeline.joblib)"),
+    # --- END RENAMED PARAMETERS ---
+    filename: str = Form(..., description="Filename of the *original* data for evaluation (e.g., adult.csv)"),
+    target_column: str = Form(...), # Needed for fairness calculation context
+    sensitive_attribute_columns: str = Form(..., description="Comma-separated sensitive attributes for fairness eval") # Needed for fairness calculation context
+):
+    """
+    Compares two models by calculating their fairness metrics.
+    """
+    comparison_results = {}
+    all_metrics_data = {}
+    parsed_sensitive_columns = parse_sensitive_attributes(sensitive_attribute_columns)
+
+    # Use the corrected parameter names directly here
+    for model_type, path_param in [("baseline", baseline_pipeline_path), ("mitigated", mitigated_pipeline_path)]:
+        actual_pipeline_path: str
+        # Construct full path if relative path within MODEL_DIRECTORY is given
+        if not os.path.isabs(path_param) and not path_param.startswith(MODEL_DIRECTORY) and MODEL_DIRECTORY in path_param:
+            # Handle cases like "models_cache/file.joblib" correctly
+            actual_pipeline_path = os.path.join(MODEL_DIRECTORY, os.path.basename(path_param))
+            logger.info(f"Interpreting provided relative path '{path_param}' as '{actual_pipeline_path}'")
+        elif os.path.isabs(path_param):
+             actual_pipeline_path = path_param
+             logger.info(f"Using provided absolute path: {actual_pipeline_path}")
+        else:
+            # If it doesn't start with MODEL_DIRECTORY and isn't absolute, assume it's just filename relative to MODEL_DIRECTORY
+            actual_pipeline_path = os.path.join(MODEL_DIRECTORY, os.path.basename(path_param))
+            logger.info(f"Interpreting provided path '{path_param}' as relative to MODEL_DIRECTORY: '{actual_pipeline_path}'")
+
+
+        if not os.path.exists(actual_pipeline_path):
+            raise HTTPException(status_code=404, detail=f"{model_type.capitalize()} model pipeline file not found at '{actual_pipeline_path}'.")
+
+        logger.info(f"Calculating fairness for {model_type} model: '{actual_pipeline_path}'")
+        try:
+            # Calculate fairness metrics for the current model
+            fairness_results = calculate_fairness_metrics(
+                pipeline_path=actual_pipeline_path,
+                filename=filename,
+                target_column=target_column,
+                sensitive_attribute_columns=parsed_sensitive_columns
+            )
+            all_metrics_data[model_type] = fairness_results # Store full fairness details
+
+            # Extract key fairness disparities for direct comparison
+            comparison_results[model_type] = {
+                "pipeline_path": actual_pipeline_path,
+                "overall_accuracy_from_fairness_eval": fairness_results.get("fairness_metrics", {}).get("overall", {}).get("accuracy"),
+                "fairness_disparities": fairness_results.get("fairness_metrics", {}).get("disparities", {}),
+                "standard_fairness_definitions": fairness_results.get("fairness_metrics", {}).get("standard_definitions", {})
+            }
+
+        except Exception as e:
+            logger.exception(f"Error processing {model_type} model at '{actual_pipeline_path}': {e}")
+            comparison_results[model_type] = {"error": str(e), "pipeline_path": actual_pipeline_path}
+
+    return JSONResponse(status_code=200, content={"comparison": comparison_results, "details": all_metrics_data})
+
 @app.get("/", summary="Root endpoint", include_in_schema=False)
 async def read_root():
-    return {"message": "Welcome to the Ethical AI Bias Mitigation Workbench API (v0.1.3)"}
+    return {"message": "Welcome to the Ethical AI Bias Mitigation Workbench API (v0.1.4)"}
