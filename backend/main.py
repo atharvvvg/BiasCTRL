@@ -1,11 +1,13 @@
 # main.py
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional # Ensure Optional is imported
 import os
 import shutil
 import logging
 import json
+
 
 # Import core functions
 from core.analysis import load_and_analyze_data
@@ -20,7 +22,22 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Ethical AI Bias Mitigation Workbench API",
     description="Phase 1: Core backend with flexible fairness/explainability.",
-    version="0.1.5", # Incremented version
+    version="0.1.5",
+)
+
+# CORS middleware
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173", # Vite default React dev server
+    # Add your deployed frontend URL here in production
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 UPLOAD_DIRECTORY = "uploads"
