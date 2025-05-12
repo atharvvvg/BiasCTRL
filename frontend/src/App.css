@@ -40,3 +40,111 @@
 .read-the-docs {
   color: #888;
 }
+
+.model-training-action {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px dashed #eee;
+}
+.model-training-action:last-child {
+  border-bottom: none;
+}
+
+.model-training-action h4 {
+    margin-bottom: 10px;
+}
+.model-training-action select {
+    margin-right: 10px;
+    width: auto; /* Let select size itself or set specific width */
+    min-width: 150px;
+}
+
+.results-display {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+.results-display h3 {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.fairness-results-per-attribute {
+  margin-bottom: 25px;
+  padding: 15px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+.fairness-results-per-attribute h3 { /* Already have a general h3 style */
+    font-size: 1.2em;
+}
+
+
+.comparison-view h3 {
+    text-align: center;
+}
+.comparison-per-attribute {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #ddd;
+}
+.comparison-per-attribute:last-child {
+    border-bottom: none;
+}
+.comparison-per-attribute h4 {
+    text-align: center;
+    background-color: #f0f2f5;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.comparison-columns {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 20px; /* Space between columns */
+}
+.comparison-column {
+    flex: 1; /* Each column takes equal space */
+    padding: 15px;
+    border: 1px solid #e7e7e7;
+    border-radius: 6px;
+    background-color: #fff;
+}
+.comparison-column h5 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    color: #333;
+}
+.comparison-column small {
+    display: block;
+    text-align: center;
+    font-size: 0.8em;
+    color: #777;
+    margin-bottom: 15px;
+    word-break: break-all;
+}
+
+/* Styles for selecting individual models for eval/explain */
+.App select {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 1em;
+  min-width: 300px; /* Give it some width */
+  display: block; /* Make it block for better spacing */
+  margin-left: auto; /* Center if parent is text-align: center */
+  margin-right: auto; /* Center */
+}
+
+.model-actions {
+    margin-top: 15px;
+    text-align: center; /* Center buttons */
+}
+.model-actions button {
+    margin: 5px;
+}

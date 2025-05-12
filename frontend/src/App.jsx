@@ -1,6 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import './App.css'; // We'll create this for basic styling
-import * as api from './services/api'; // Import all API functions
+import './App.css'; 
+import * as api from './services/api'; 
+import MetricsTable from './components/MetricsTable';
+import FairnessDisplay from './components/FairnessDisplay';
+import ShapChart from './components/ShapChart';
 
 // Simple display components (can be moved to separate files later)
 const JsonDisplay = ({ data, title }) => (
@@ -34,7 +37,7 @@ function App() {
   const [uploadedFilename, setUploadedFilename] = useState('');
   const [targetColumn, setTargetColumn] = useState('income');
   const [sensitiveAttrs, setSensitiveAttrs] = useState('race,gender');
-  const [reweighAttribute, setReweighAttribute] = useState('race'); // Default for reweighing
+  const [reweighAttribute, setReweighAttribute] = useState('race'); 
 
   // Model Training State
   const [baselineModelInfo, setBaselineModelInfo] = useState(null);
@@ -52,6 +55,8 @@ function App() {
   const [currentAction, setCurrentAction] = useState(''); // To show specific loading message
   const [error, setError] = useState('');
 
+  const [selectedModelForEval, setSelectedModelForEval] = useState('');
+  
   const handleApiCall = async (actionMessage, apiFunc, ...args) => {
     setIsLoading(true);
     setCurrentAction(actionMessage);
@@ -94,8 +99,6 @@ function App() {
     const result = await handleApiCall('Training baseline model...', api.trainBaselineModel, uploadedFilename, targetColumn, sensitiveAttrs);
     if (result) {
         setBaselineModelInfo(result.model_info);
-        // Optionally, auto-fetch fairness for baseline
-        // await handleCalculateFairness(result.model_info.pipeline_path, 'Baseline Model Fairness');
     }
   };
 
@@ -112,18 +115,32 @@ function App() {
     if (result) setOversampledModelInfo(result.model_info);
   };
 
-  const handleCalculateFairness = async (pipelinePathToUse, titlePrefix = "Fairness Results") => {
+  const handleCalculateFairness = async (pipelinePathToUse, modelNameForTitle) => {
     if (!uploadedFilename) { setError('Upload a file first.'); return; }
-    if (!pipelinePathToUse) { setError('Train a model or provide pipeline path.'); return; }
-    const result = await handleApiCall(`Calculating fairness for ${pipelinePathToUse}...`, api.calculateFairness, uploadedFilename, targetColumn, sensitiveAttrs, pipelinePathToUse);
-    if (result) setFairnessResults({title: titlePrefix, data: result});
+    if (!pipelinePathToUse) { setError('Model pipeline path is missing.'); return; }
+    const result = await handleApiCall(
+      `Calculating fairness for ${modelNameForTitle}...`,
+      api.calculateFairness,
+      uploadedFilename, targetColumn, sensitiveAttrs, pipelinePathToUse
+    );
+    if (result) {
+      setFairnessResults({ title: `Fairness Results for ${modelNameForTitle}`, data: result, forPipeline: pipelinePathToUse });
+      setSelectedModelForEval(pipelinePathToUse); 
+    }
   };
 
-  const handleExplainModel = async (pipelinePathToUse) => {
+  const handleExplainModel = async (pipelinePathToUse, modelNameForTitle) => {
     if (!uploadedFilename) { setError('Upload a file first.'); return; }
-    if (!pipelinePathToUse) { setError('Train a model or provide pipeline path.'); return; }
-    const result = await handleApiCall(`Generating SHAP for ${pipelinePathToUse}...`, api.explainModel, uploadedFilename, pipelinePathToUse, 100);
-    if (result) setShapResults({title: `SHAP for ${pipelinePathToUse}`, data: result});
+    if (!pipelinePathToUse) { setError('Model pipeline path is missing.'); return; }
+    const result = await handleApiCall(
+      `Generating SHAP for ${modelNameForTitle}...`,
+      api.explainModel,
+      uploadedFilename, pipelinePathToUse, 100
+    );
+    if (result) {
+      setShapResults({ title: `SHAP Explanation for ${modelNameForTitle}`, data: result, forPipeline: pipelinePathToUse });
+      setSelectedModelForEval(pipelinePathToUse); 
+    }
   };
 
   const handleCompareModels = async () => {
@@ -131,23 +148,39 @@ function App() {
       setError('Train at least a baseline and one mitigated model to compare.');
       return;
     }
-    // For simplicity, compare baseline with the first available mitigated model
     const mitigatedPath = reweighedModelInfo ? reweighedModelInfo.pipeline_path : (oversampledModelInfo ? oversampledModelInfo.pipeline_path : null);
     if (!mitigatedPath) { setError('No mitigated model found for comparison.'); return; }
 
     const result = await handleApiCall('Comparing models...', api.compareModels, baselineModelInfo.pipeline_path, mitigatedPath, uploadedFilename, targetColumn, sensitiveAttrs);
-    if (result) setComparisonResults(result);
+    if (result) {
+        setComparisonResults(result);
+        setFairnessResults(null);
+        setShapResults(null);
+    }
   };
+
+  const getModelName = (modelInfo) => {
+    if (!modelInfo || !modelInfo.pipeline_path) return "Unknown Model";
+    const parts = modelInfo.pipeline_path.split(/[\\/]/).pop().split('_');
+    if (parts.includes("baseline")) return "Baseline";
+    if (parts.includes("reweighed")) return `Reweighed (by ${modelInfo.mitigation_target_attribute || parts[parts.indexOf("reweighed")+1]})`;
+    if (parts.includes("oversampled")) return "Oversampled";
+    return modelInfo.pipeline_path.split(/[\\/]/).pop();
+  };
+
+  const trainedModels = [baselineModelInfo, reweighedModelInfo, oversampledModelInfo].filter(Boolean);
 
   return (
     <div className="App">
-      <header><h1>Ethical AI Bias Mitigation Workbench</h1></header>
+      <header><h1>AI Bias Mitigation Workbench</h1></header>
       {isLoading && <div className="loading-overlay">Loading: {currentAction}</div>}
       {error && <p className="error-message">Error: {error}</p>}
 
       <main>
+        {/* --- Section 1: Dataset & Config --- */}
         <section className="card">
           <h2>1. Dataset & Configuration</h2>
+          {/* ... (file upload, target, sensitive inputs as before) ... */}
           <input type="file" onChange={handleFileChange} accept=".csv" />
           <button onClick={handleUpload} disabled={isLoading || !selectedFile}>Upload CSV</button>
           {uploadedFilename && <p>Uploaded: <strong>{uploadedFilename}</strong></p>}
@@ -165,17 +198,26 @@ function App() {
           </>)}
         </section>
 
-        <JsonDisplay data={analysisResults?.analysis} title="Data Analysis Overview" />
+        {/* Display Analysis Results using JsonDisplay (or a new component) */}
+        {analysisResults && (
+             <div className="card results-card">
+                <h3>Data Analysis Overview for {analysisResults.filename}</h3>
+                <pre>{JSON.stringify(analysisResults.analysis, null, 2)}</pre>
+            </div>
+        )}
 
+
+        {/* --- Section 2: Train Models --- */}
         {uploadedFilename && (
           <section className="card">
             <h2>2. Train Models</h2>
-            <button onClick={handleTrainBaseline} disabled={isLoading}>Train Baseline Model</button>
-            <ModelInfoDisplay modelInfo={baselineModelInfo} title="Baseline Model Trained" />
-
+            <div className="model-training-action">
+                <button onClick={handleTrainBaseline} disabled={isLoading}>Train Baseline Model</button>
+                <ModelInfoDisplay modelInfo={baselineModelInfo} title="Baseline Model Artifacts" />
+            </div>
             <hr />
             <h3>Mitigation Techniques:</h3>
-            <div>
+            <div className="model-training-action">
               <h4>Reweighing</h4>
               <label htmlFor="reweighAttr">Reweigh by Attribute: </label>
               <select id="reweighAttr" value={reweighAttribute} onChange={(e) => setReweighAttribute(e.target.value)}>
@@ -184,46 +226,117 @@ function App() {
                 ))}
               </select>
               <button onClick={handleMitigateReweigh} disabled={isLoading || !reweighAttribute}>Apply Reweighing</button>
-              <ModelInfoDisplay modelInfo={reweighedModelInfo} title="Reweighed Model Trained" />
+              <ModelInfoDisplay modelInfo={reweighedModelInfo} title="Reweighed Model Artifacts" />
             </div>
-
-            <div>
+            <div className="model-training-action">
               <h4>Random Oversampling</h4>
               <button onClick={handleMitigateOversample} disabled={isLoading}>Apply Oversampling</button>
-              <ModelInfoDisplay modelInfo={oversampledModelInfo} title="Oversampled Model Trained" />
+              <ModelInfoDisplay modelInfo={oversampledModelInfo} title="Oversampled Model Artifacts" />
             </div>
           </section>
         )}
 
-        {(baselineModelInfo || reweighedModelInfo || oversampledModelInfo) && (
+        {/* --- Section 3: Evaluate & Explain Individual Models --- */}
+        {trainedModels.length > 0 && (
           <section className="card">
             <h2>3. Evaluate & Explain Individual Models</h2>
-            {/* Simplified: allow choosing which model to evaluate/explain */}
-            {[baselineModelInfo, reweighedModelInfo, oversampledModelInfo].filter(Boolean).map(model => (
-              model && model.pipeline_path && (
-                <div key={model.pipeline_path} className="model-actions">
-                  <h4>Actions for: {model.pipeline_path.split(/[\\/]/).pop()}</h4>
-                  <button onClick={() => handleCalculateFairness(model.pipeline_path, `Fairness for ${model.pipeline_path.split(/[\\/]/).pop()}`)} disabled={isLoading}>Calculate Fairness</button>
-                  <button onClick={() => handleExplainModel(model.pipeline_path)} disabled={isLoading}>Generate SHAP Explanation</button>
+            <p>Select a trained model to evaluate its fairness or get SHAP explanations.</p>
+            <select
+              value={selectedModelForEval}
+              onChange={(e) => {
+                setSelectedModelForEval(e.target.value);
+                setFairnessResults(null); // Clear previous results when model changes
+                setShapResults(null);
+              }}
+              disabled={trainedModels.length === 0}
+            >
+              <option value="">-- Select a Trained Model --</option>
+              {trainedModels.map(model => (
+                model && model.pipeline_path && (
+                  <option key={model.pipeline_path} value={model.pipeline_path}>
+                    {getModelName(model)} ({model.pipeline_path.split(/[\\/]/).pop()})
+                  </option>
+                )
+              ))}
+            </select>
+
+            {selectedModelForEval && (
+                <div className="model-actions">
+                    <button onClick={() => handleCalculateFairness(selectedModelForEval, getModelName(trainedModels.find(m=>m.pipeline_path === selectedModelForEval)) )} disabled={isLoading}>Calculate Fairness</button>
+                    <button onClick={() => handleExplainModel(selectedModelForEval, getModelName(trainedModels.find(m=>m.pipeline_path === selectedModelForEval)))} disabled={isLoading}>Generate SHAP Explanation</button>
                 </div>
-              )
-            ))}
+            )}
+
+            {/* Display Fairness Results for the selected model */}
+            {fairnessResults && fairnessResults.forPipeline === selectedModelForEval && (
+                <div className="results-display">
+                    <h3>{fairnessResults.title}</h3>
+                    {Object.entries(fairnessResults.data).map(([sensAttr, data]) => {
+                        if (data.error) return <p key={sensAttr}>Error for {sensAttr}: {data.error}</p>;
+                        return (
+                            <div key={sensAttr} className="fairness-results-per-attribute">
+                                <MetricsTable metrics={data.fairness_metrics?.overall} title={`Overall Metrics (evaluating on ${sensAttr})`} />
+                                <FairnessDisplay fairnessData={data.fairness_metrics} sensitiveAttribute={sensAttr} />
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Display SHAP Results for the selected model */}
+            {shapResults && shapResults.forPipeline === selectedModelForEval && (
+                 <div className="results-display">
+                    {/* <h3>{shapResults.title}</h3> Now handled by ShapChart title */}
+                    <ShapChart shapData={shapResults.data} title={shapResults.title} />
+                 </div>
+            )}
           </section>
         )}
 
-        <JsonDisplay data={fairnessResults?.data} title={fairnessResults?.title} />
-        <JsonDisplay data={shapResults?.data} title={shapResults?.title} />
 
-
-        {(baselineModelInfo && (reweighedModelInfo || oversampledModelInfo)) && (
+        {/* --- Section 4: Compare Models --- */}
+        {baselineModelInfo && trainedModels.length > 1 && (
           <section className="card">
             <h2>4. Compare Models</h2>
-            <p>Compares baseline with the first available mitigated model.</p>
-            <button onClick={handleCompareModels} disabled={isLoading}>Compare Baseline vs. Mitigated</button>
+            <p>Compares baseline with the first available mitigated model (Reweighed or Oversampled).</p>
+            <button onClick={handleCompareModels} disabled={isLoading}>Compare Baseline vs. A Mitigated Model</button>
+
+            {comparisonResults && comparisonResults.comparison_by_sensitive_attribute && (
+                <div className="results-display comparison-view">
+                    <h3>Model Comparison Results</h3>
+                    {Object.entries(comparisonResults.comparison_by_sensitive_attribute).map(([sensAttr, comparisonData]) => (
+                        <div key={sensAttr} className="comparison-per-attribute">
+                            <h4>Comparison for Sensitive Attribute: "{sensAttr}"</h4>
+                            <div className="comparison-columns">
+                                {["baseline", "mitigated"].map(modelType => (
+                                    comparisonData[modelType] && !comparisonData[modelType].error ? (
+                                        <div key={modelType} className="comparison-column">
+                                            <h5>{modelType.charAt(0).toUpperCase() + modelType.slice(1)} Model</h5>
+                                            <small>({comparisonData[modelType].pipeline_path.split(/[\\/]/).pop()})</small>
+                                            <MetricsTable metrics={{accuracy: comparisonData[modelType].overall_accuracy_from_fairness_eval}} title="Overall Accuracy" />
+                                            {/* <FairnessDisplay fairnessData={comparisonData[modelType]} sensitiveAttribute={sensAttr} /> */}
+                                            <FairnessDisplay
+                                              fairnessData={{
+                                                  disparities: comparisonData[modelType].fairness_disparities,
+                                                  standard_definitions: comparisonData[modelType].standard_fairness_definitions
+                                              }}
+                                              sensitiveAttribute={sensAttr}
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div key={modelType} className="comparison-column">
+                                             <h5>{modelType.charAt(0).toUpperCase() + modelType.slice(1)} Model</h5>
+                                             <p>Error or no data: {comparisonData[modelType]?.error || "Data unavailable"}</p>
+                                        </div>
+                                    )
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
           </section>
         )}
-        <JsonDisplay data={comparisonResults} title="Model Comparison Results" />
-
       </main>
     </div>
   );
