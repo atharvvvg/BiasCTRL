@@ -1,6 +1,6 @@
 import pandas as pd
-from fairlearn.metrics import MetricFrame, count, selection_rate, make_derived_metric, true_positive_rate, false_positive_rate # Import more base metrics if needed for specific disparities
-from sklearn.metrics import accuracy_score, recall_score, precision_score # Use sklearn metrics within MetricFrame
+from fairlearn.metrics import MetricFrame, count, selection_rate, true_positive_rate, false_positive_rate
+from sklearn.metrics import accuracy_score, recall_score, precision_score
 from typing import Dict, Any, List
 import joblib
 import os
@@ -9,18 +9,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 UPLOAD_DIRECTORY = "uploads"
-MODEL_DIRECTORY = "models_cache" # Assuming access
+# MODEL_DIRECTORY = "models_cache"
 
 def calculate_fairness_metrics(
     pipeline_path: str,
-    filename: str, # Test data filename (used to load data for evaluation)
+    filename: str,
     target_column: str,
-    sensitive_attribute_columns: List[str]
+    sensitive_attribute_columns: List[str] 
 ) -> Dict[str, Any]:
     """
     Loads a trained pipeline and test data to calculate fairness metrics using MetricFrame.
-    Handles potential '?' missing values in test data.
-    Calculates metrics based on the FIRST sensitive attribute provided.
+    Calculates metrics for EACH sensitive attribute provided in the list.
+    Returns a dictionary keyed by sensitive attribute name.
     """
     if not os.path.exists(pipeline_path):
         raise FileNotFoundError(f"Pipeline file not found: {pipeline_path}")
@@ -32,144 +32,105 @@ def calculate_fairness_metrics(
     try:
         pipeline = joblib.load(pipeline_path)
         logger.info(f"Pipeline loaded from {pipeline_path}")
-        # Load test data, handling '?' same way as training
         df_test = pd.read_csv(filepath, skipinitialspace=True, na_values='?')
         logger.info(f"Test data loaded from {filepath}")
     except Exception as e:
         logger.exception(f"Error loading pipeline or test data: {e}")
         raise ValueError(f"Error loading pipeline or test data: {e}")
 
-    # --- Clean Target Column (ensure consistency) ---
+    # Clean Target Column 
     if target_column not in df_test.columns:
         raise ValueError(f"Target column '{target_column}' not found in the test dataset.")
-    # Handle potential missing values in target before cleaning
     if df_test[target_column].isnull().any():
-        logger.warning(f"Target column '{target_column}' in test data contains {df_test[target_column].isnull().sum()} missing values. Dropping rows with missing target.")
         df_test.dropna(subset=[target_column], inplace=True)
-
     if df_test[target_column].dtype == 'object':
         unique_vals = df_test[target_column].unique()
         if len(unique_vals) == 2:
-            positive_class_marker = '>50K' # Explicitly define
+            positive_class_marker = '>50K'
             df_test[target_column] = df_test[target_column].apply(lambda x: 1 if x == positive_class_marker else 0).astype(int)
-            # logger.info("Test data target column cleaned.") # Less verbose logging
-        else:
-            logger.error(f"Target column '{target_column}' in test data is object type but not binary. Found: {unique_vals}")
-            raise ValueError(f"Target column '{target_column}' in test data is object type but not binary.")
+        else: raise ValueError(f"Target column '{target_column}' in test data is object type but not binary.")
     elif pd.api.types.is_numeric_dtype(df_test[target_column]):
-         if set(df_test[target_column].unique()) == {0, 1}:
-             df_test[target_column] = df_test[target_column].astype(int)
-         else:
-            logger.warning(f"Target column '{target_column}' in test data is numeric but not binary 0/1.")
-    else:
-         raise ValueError(f"Target column '{target_column}' in test data has an unsupported data type: {df_test[target_column].dtype}")
+         if not set(df_test[target_column].unique()).issubset({0, 1}): 
+             logger.warning(f"Target column '{target_column}' in test data is numeric but not strictly binary 0/1.")
+         df_test[target_column] = df_test[target_column].astype(int) 
+    else: raise ValueError(f"Target column '{target_column}' in test data has an unsupported data type.")
 
 
-    # --- Prepare Data for Prediction and Fairness Calculation ---
-    # Check sensitive attributes exist
-    valid_sensitive_columns = [col for col in sensitive_attribute_columns if col in df_test.columns]
-    if len(valid_sensitive_columns) != len(sensitive_attribute_columns):
-        missing_sens_cols = set(sensitive_attribute_columns) - set(valid_sensitive_columns)
-        logger.warning(f"Provided sensitive attributes not found in test data: {missing_sens_cols}. Proceeding without them for fairness calculation.")
-        if not valid_sensitive_columns: # Cannot proceed if NO valid sensitive columns
-             raise ValueError("No valid sensitive attribute columns found in the test data to calculate fairness.")
-
-    # X_test needs all columns the pipeline expects (features + potentially sensitive if passthrough was used, though we dropped them now)
-    # The loaded pipeline's preprocessor knows which columns to use for transforming features
-    X_eval = df_test # Pass the whole dataframe subset relevant for evaluation
+    # Prepare Data for Prediction 
+    X_eval = df_test
     y_true = df_test[target_column]
 
-    # Get sensitive features directly from the test dataframe for MetricFrame
-    sensitive_features_eval = df_test[valid_sensitive_columns]
-
-    # --- Get Predictions ---
     try:
         y_pred = pipeline.predict(X_eval)
         logger.info("Predictions generated using the loaded pipeline.")
     except Exception as e:
         logger.exception(f"Error during prediction on test data: {e}")
-        raise ValueError(f"Error during prediction: {e}. Ensure test data has necessary columns for the pipeline.")
+        raise ValueError(f"Error during prediction: {e}.")
 
-
-    # --- Calculate Metrics using MetricFrame ---
-    # Define base metrics required for common fairness calculations
-    # Use fairlearn's built-in metrics where possible for consistency
-    metrics = {
+    # Define Base Metrics 
+    base_metrics = {
         'accuracy': accuracy_score,
         'precision': precision_score,
         'recall': recall_score,
         'false_positive_rate': false_positive_rate,
-        'true_positive_rate': true_positive_rate, # recall is same as TPR
+        'true_positive_rate': true_positive_rate,
         'selection_rate': selection_rate,
         'count': count
     }
 
-    # --- IMPORTANT: Group on ONE sensitive feature at a time ---
-    # MetricFrame calculates metrics *disaggregated* by groups in sensitive_features.
-    # Disparity metrics (difference, ratio) are then calculated *across these groups*.
-    # Let's calculate for the FIRST valid sensitive attribute provided.
-    # A more advanced version could loop through all or handle combined attributes.
+    # Initialize overall results dictionary 
+    all_fairness_results = {}
 
-    grouped_on_feature_name = valid_sensitive_columns[0] # Use the first valid one
-    grouped_on_values = sensitive_features_eval[grouped_on_feature_name]
-    logger.info(f"Calculating fairness metrics grouped by: '{grouped_on_feature_name}'")
+    valid_sensitive_columns_from_input = [col for col in sensitive_attribute_columns if col in df_test.columns]
+    if not valid_sensitive_columns_from_input:
+        raise ValueError("None of the provided sensitive attribute columns found in the test data.")
 
-    try:
-        # Initialize MetricFrame
-        metric_frame = MetricFrame(metrics=metrics,
-                                   y_true=y_true,
-                                   y_pred=y_pred,
-                                   sensitive_features=grouped_on_values) # Pass the specific Series
+    # Loop Through Each Provided Sensitive Attribute 
+    for sens_attr_name in valid_sensitive_columns_from_input:
+        logger.info(f"Calculating fairness metrics grouped by: '{sens_attr_name}'")
+        sensitive_features_for_metricframe = df_test[sens_attr_name]
 
-        results = {"fairness_metrics": {}}
-        # Get overall metrics (averaged over all data)
-        results["fairness_metrics"]["overall"] = metric_frame.overall.to_dict()
-        # Get metrics disaggregated by group
-        results["fairness_metrics"]["by_group"] = metric_frame.by_group.to_dict()
+        try:
+            metric_frame = MetricFrame(metrics=base_metrics,
+                                       y_true=y_true,
+                                       y_pred=y_pred,
+                                       sensitive_features=sensitive_features_for_metricframe)
 
-        # --- MODIFICATION: Calculate common fairness disparities ---
-        # The .difference() and .ratio() methods are called *after* calculation,
-        # and operate on the results stored within the metric_frame object for ALL metrics.
-        # We extract the specific disparity we need after calling the method.
+            current_attribute_results = {"fairness_metrics": {}}
+            current_attribute_results["fairness_metrics"]["overall"] = metric_frame.overall.to_dict()
+            current_attribute_results["fairness_metrics"]["by_group"] = metric_frame.by_group.to_dict()
 
-        differences = metric_frame.difference(method='between_groups') # Max difference between any two groups
-        ratios = metric_frame.ratio(method='between_groups') # Min ratio between any two groups
+            differences = metric_frame.difference(method='between_groups')
+            ratios = metric_frame.ratio(method='between_groups')
 
-        results["fairness_metrics"]["disparities"] = {
-            # Extract difference for specific base metrics
-            "accuracy_difference": differences['accuracy'],
-            "precision_difference": differences['precision'],
-            "recall_difference (true_positive_rate_difference)": differences['recall'], # or differences['true_positive_rate']
-            "false_positive_rate_difference": differences['false_positive_rate'],
-            "selection_rate_difference (demographic_parity_difference)": differences['selection_rate'],
+            current_attribute_results["fairness_metrics"]["disparities"] = {
+                "accuracy_difference": differences['accuracy'],
+                "precision_difference": differences['precision'],
+                "recall_difference (true_positive_rate_difference)": differences['recall'],
+                "false_positive_rate_difference": differences['false_positive_rate'],
+                "selection_rate_difference (demographic_parity_difference)": differences['selection_rate'],
+                "accuracy_ratio": ratios.get('accuracy', None),
+                "precision_ratio": ratios.get('precision', None),
+                "recall_ratio": ratios.get('recall', None),
+                "selection_rate_ratio (disparate_impact)": ratios.get('selection_rate', None),
+            }
+            current_attribute_results["fairness_metrics"]["standard_definitions"] = {
+                "demographic_parity_difference": differences['selection_rate'],
+                "demographic_parity_ratio": ratios.get('selection_rate', None),
+                "equalized_odds_difference": max(differences['true_positive_rate'], differences['false_positive_rate']),
+                "equal_opportunity_difference": differences['true_positive_rate'],
+            }
+            current_attribute_results["fairness_info"] = {
+                 "grouped_on_sensitive_attribute": sens_attr_name
+            }
+            logger.info(f"Fairness metrics for '{sens_attr_name}' calculated successfully.")
+            all_fairness_results[sens_attr_name] = current_attribute_results
 
-            # Extract ratios for specific base metrics
-             # Handle potential division by zero or NaN results from ratio calculation if needed
-            "accuracy_ratio": ratios.get('accuracy', None), # Use .get for safety
-            "precision_ratio": ratios.get('precision', None),
-            "recall_ratio": ratios.get('recall', None),
-            "selection_rate_ratio (disparate_impact)": ratios.get('selection_rate', None),
-        }
+        except Exception as e:
+            logger.exception(f"Error during MetricFrame calculation for sensitive attribute '{sens_attr_name}': {e}")
+            all_fairness_results[sens_attr_name] = {"error": f"Could not calculate fairness for {sens_attr_name}: {e}"}
 
-        # --- Common Named Fairness Metrics ---
-        # These combine differences of base metrics
-        results["fairness_metrics"]["standard_definitions"] = {
-            "demographic_parity_difference": differences['selection_rate'],
-            "demographic_parity_ratio": ratios.get('selection_rate', None),
-            "equalized_odds_difference": max(differences['true_positive_rate'], differences['false_positive_rate']), # Max diff in TPR and FPR
-            "equal_opportunity_difference": differences['true_positive_rate'], # Difference in TPR (Recall)
-        }
+    if not all_fairness_results: 
+        return {"error": "No fairness results could be calculated."}
 
-
-        logger.info("Fairness metrics and disparities calculated successfully.")
-
-    except Exception as e:
-        logger.exception(f"Error during MetricFrame calculation or disparity processing: {e}") # Use logger.exception
-        raise ValueError(f"Could not calculate fairness metrics: {e}")
-
-
-    results["fairness_info"] = {
-         "grouped_on_sensitive_attribute": grouped_on_feature_name
-    }
-
-    return results
+    return all_fairness_results 
