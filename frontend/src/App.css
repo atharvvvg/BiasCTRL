@@ -5,6 +5,16 @@
   text-align: center;
 }
 
+.puzzle-border {
+  background-color: #222;
+  color: #0f0;
+  padding: 20px;
+  border: 3px double #0f0;
+  font-family: 'Courier New', monospace;
+  text-shadow: 0 0 5px #0f0;
+}
+
+
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -93,7 +103,8 @@
 }
 .comparison-per-attribute h4 {
     text-align: center;
-    background-color: #f0f2f5;
+    background-color: #dce7f9;
+    color: #333;
     padding: 10px;
     border-radius: 4px;
 }
@@ -133,7 +144,6 @@
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;
-  background-color: white;
   font-size: 1em;
   min-width: 300px; /* Give it some width */
   display: block; /* Make it block for better spacing */

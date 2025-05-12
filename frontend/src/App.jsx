@@ -172,7 +172,7 @@ function App() {
 
   return (
     <div className="App">
-      <header><h1>AI Bias Mitigation Workbench</h1></header>
+      <header><h1 class="puzzle-border">AI Bias Mitigation Workbench</h1></header>
       {isLoading && <div className="loading-overlay">Loading: {currentAction}</div>}
       {error && <p className="error-message">Error: {error}</p>}
 

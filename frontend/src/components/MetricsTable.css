@@ -16,6 +16,7 @@
   
   .metrics-table-container th,
   .metrics-table-container td {
+    color: black;
     border: 1px solid #ddd;
     padding: 8px 10px;
     text-align: left;
