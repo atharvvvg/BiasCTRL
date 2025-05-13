@@ -1,0 +1,128 @@
+.analysis-display { /* Inherits .card styles from App.css if applied there */
+    margin-top: 20px;
+  }
+  
+  .analysis-display h3 { /* Title of the analysis display card */
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 1.4em;
+  }
+  .analysis-display h4 { /* Section titles */
+    font-size: 1.2em;
+    color: #e1e1e1;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+  }
+  .analysis-display h5 { /* Sensitive attribute titles */
+    font-size: 1.1em;
+    color: #555;
+    margin-top: 15px;
+    margin-bottom: 10px;
+  }
+  .analysis-display h6 { /* Sub-titles within sensitive attributes */
+      font-size: 1em;
+      color: #666;
+      margin-top: 10px;
+      margin-bottom: 5px;
+  }
+  
+  .analysis-note {
+    background-color: #e9f7ef;
+    border-left: 4px solid #28a745;
+    padding: 10px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: black;
+  }
+  
+  .analysis-section {
+    margin-bottom: 25px;
+  }
+  
+  .analysis-section ul {
+    list-style-type: none;
+    padding-left: 0;
+  }
+  .analysis-section li {
+    margin-bottom: 5px;
+    font-size: 0.95em;
+  }
+  .analysis-section li strong {
+    color: #0056b3;
+  }
+
+  .column-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 15px;
+    padding-left: 0;
+    list-style-type: none;
+  }
+  .column-list li {
+    background-color: #f0f2f5;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    margin-bottom: 0;
+    color: black;
+  }
+  
+  
+  .analysis-section table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    margin-top: 5px;
+  }
+  
+  .analysis-section th,
+  .analysis-section td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    color: black;
+    background-color: white;
+  }
+  
+  .analysis-section th {
+    background-color: #f0f2f5;
+    color: black;
+    font-weight: bold;
+  }
+  
+  .sensitive-attribute-details {
+    margin-top: 20px;
+    padding-top: 15px;
+    padding-left: 15px;
+    border-left: 3px solid #007bff; /* Blue accent for each sensitive attribute block */
+    background-color: #fdfdfd; /* Slightly different background */
+    margin-bottom: 20px;
+  }
+  
+  .target-by-group {
+    margin-top: 10px;
+  }
+  
+  .target-by-group-item {
+    margin-bottom: 10px;
+  }
+  .target-by-group-item strong {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 3px;
+  }
+  .target-by-group-item ul {
+      padding-left: 15px;
+      list-style-type: none;
+      color: black;
+      border: 1px solid black;
+      margin-right: 1.5em;
+      border-radius: 5px;
+      padding: 5px;
+      margin-bottom: 0;
+  }
+  .target-by-group-item li strong {
+      display: inline;
+      color: #333; 
+  }

@@ -4,16 +4,17 @@ import * as api from './services/api';
 import MetricsTable from './components/MetricsTable';
 import FairnessDisplay from './components/FairnessDisplay';
 import ShapChart from './components/ShapChart';
+import AnalysisDisplay from './components/AnalysisDisplay';
 
 // Simple display components (can be moved to separate files later)
-const JsonDisplay = ({ data, title }) => (
-  data && (
-    <div className="results-card">
-      <h3>{title}</h3>
-      <pre>{JSON.stringify(data, null, 2)}</pre>
-    </div>
-  )
-);
+// const JsonDisplay = ({ data, title }) => (
+//   data && (
+//     <div className="results-card">
+//       <h3>{title}</h3>
+//       <pre>{JSON.stringify(data, null, 2)}</pre>
+//     </div>
+//   )
+// );
 
 const ModelInfoDisplay = ({ modelInfo, title }) => (
   modelInfo && (
@@ -198,14 +199,12 @@ function App() {
           </>)}
         </section>
 
-        {/* Display Analysis Results using JsonDisplay (or a new component) */}
         {analysisResults && (
-             <div className="card results-card">
-                <h3>Data Analysis Overview for {analysisResults.filename}</h3>
-                <pre>{JSON.stringify(analysisResults.analysis, null, 2)}</pre>
-            </div>
+          <AnalysisDisplay
+            analysisData={analysisResults.analysis}
+            filename={analysisResults.filename}
+          />
         )}
-
 
         {/* --- Section 2: Train Models --- */}
         {uploadedFilename && (
