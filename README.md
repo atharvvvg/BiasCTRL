@@ -1,4 +1,4 @@
-# BiasCTRL: An Interactive Workbench for Ethical AI Development
+# BiasCTRL: An Interactive Workbench for AI Development
 
 **BiasCTRL is a comprehensive, web-based platform designed to empower developers and data scientists in building fairer and more responsible AI systems. It provides an interactive environment to systematically discover, analyze, visualize, and mitigate biases within machine learning models and the datasets they are trained on.**
 
@@ -6,7 +6,7 @@ The project aims to bridge the gap between theoretical fairness concepts and pra
 
 **Current Status: Fully Functional Backend API & Foundational Frontend**
 
-The core backend, built with Python and FastAPI, is feature-complete, offering a rich set of tools for ethical AI development. A foundational React frontend (using Vite) is in place, enabling interaction with all backend functionalities and providing initial visualizations and structured display of results. The next major phase is to significantly enhance the frontend's interactivity, visualization capabilities, and user experience.
+The core backend, built with Python and FastAPI, is feature-complete, offering a rich set of tools for AI development. A foundational React frontend (using Vite) is in place, enabling interaction with all backend functionalities and providing initial visualizations and structured display of results. The next major phase is to significantly enhance the frontend's interactivity, visualization capabilities, and user experience.
 
 ## The Challenge of AI Bias
 
