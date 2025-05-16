@@ -2,6 +2,8 @@
 
 **BiasCTRL is a comprehensive, web-based platform designed to empower developers and data scientists in building fairer and more responsible AI systems. It provides an interactive environment to systematically discover, analyze, visualize, and mitigate biases within machine learning models and the datasets they are trained on.**
 
+
+
 The project aims to bridge the gap between theoretical fairness concepts and practical implementation by offering a user-friendly workflow that integrates data analysis, model training, state-of-the-art bias mitigation techniques, robust fairness evaluation, and insightful model explanations.
 
 **Current Status: Fully Functional Backend API & Foundational Frontend**
@@ -155,7 +157,7 @@ biasctrl/
 
 1.  **Clone the Repository:**
     ```bash
-    # git clone <repository-url> # If you have it on GitHub
+    # git clone <repository-url>
     # cd biasctrl/backend
     ```
     (Or navigate to your existing `biasctrl/backend` directory)
@@ -228,7 +230,7 @@ While the backend is robust, the project has significant potential for growth:
   - Dynamic selection of models for comparison from a list of trained artifacts.
   - Visual SHAP summary plots, dependence plots, per-group explanations.
 - **Expanded Mitigation Toolkit:**
-  - **Pre-processing:** Add `DisparateImpactRemover` (Fairlearn), more advanced resampling (SMOTE).
+  - **Pre-processing:** Add `DisparateImpactRemover` (Fairlearn), m ore advanced resampling (SMOTE).
   - **In-processing:** Integrate fairness-constrained algorithms (e.g., `ExponentiatedGradient`, `GridSearch` with fairness constraints from Fairlearn).
   - **Post-processing:** Implement `ThresholdOptimizer` (Fairlearn) to adjust prediction thresholds.
 - **Deeper Explainability:**
@@ -246,8 +248,8 @@ While the backend is robust, the project has significant potential for growth:
 
 ## Contributing
 
-Go to CONTRIBUTING.md
+[Contribution guidelines for this project](CONTRIBUTING.md)
 
 ## License
 
-MIT License
+[MIT License](LICENSE)
