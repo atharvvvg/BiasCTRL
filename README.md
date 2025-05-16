@@ -2,9 +2,7 @@
 
 **BiasCTRL is a comprehensive, web-based platform designed to empower developers and data scientists in building fairer and more responsible AI systems. It provides an interactive environment to systematically discover, analyze, visualize, and mitigate biases within machine learning models and the datasets they are trained on.**
 
-<br />
 ![screenshot](https://github.com/user-attachments/assets/96cb74f7-4eaa-45ab-b64d-8021b3b4dc4f)
-<br />
 
 The project aims to bridge the gap between theoretical fairness concepts and practical implementation by offering a user-friendly workflow that integrates data analysis, model training, state-of-the-art bias mitigation techniques, robust fairness evaluation, and insightful model explanations.
 
