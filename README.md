@@ -212,6 +212,8 @@ biasctrl/
 
 ## Workflow Example using the API (via `/docs`)
 
+![FastAPI](media/swaggerui_backend.png)
+
 1.  **Upload Data:** Use `POST /upload` to upload your `adult.csv` (or other dataset). Note the `filename` in the response.
 2.  **Analyze Data:** Use `POST /analyze` with the `filename`, `target_column` (e.g., "income"), and `sensitive_attribute_columns` (e.g., "race,gender"). Review the distributions.
 3.  **Train Baseline:** Use `POST /train_baseline` with the same parameters. Note the `pipeline_path` from the `model_info` in the response (e.g., `models_cache/adult_pipeline.joblib`).
