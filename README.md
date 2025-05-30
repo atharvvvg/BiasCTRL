@@ -2,7 +2,7 @@
 
 **BiasCTRL is a comprehensive, web-based platform designed to empower developers and data scientists in building fairer and more responsible AI systems. It provides an interactive environment to systematically discover, analyze, visualize, and mitigate biases within machine learning models and the datasets they are trained on.**
 
-![screenshot](https://github.com/user-attachments/assets/96cb74f7-4eaa-45ab-b64d-8021b3b4dc4f)
+![BiasCTRL Lander](media/lander.png)
 
 The project aims to bridge the gap between theoretical fairness concepts and practical implementation by offering a user-friendly workflow that integrates data analysis, model training, state-of-the-art bias mitigation techniques, robust fairness evaluation, and insightful model explanations.
 
@@ -23,6 +23,8 @@ BiasCTRL addresses this by providing tools to:
 
 ## Core Concepts & Features
 
+![BiasCTRL Functions](media/functions.png)
+
 BiasCTRL is built around a workflow that guides users through the lifecycle of responsible AI development:
 
 ### 1. Data Ingestion & Analysis (`/upload`, `/analyze`)
@@ -35,6 +37,9 @@ BiasCTRL is built around a workflow that guides users through the lifecycle of r
     - Distribution of individuals across different groups for each specified sensitive attribute (e.g., count of individuals per race, per gender).
     - Target variable distribution _within each group_ of a sensitive attribute. This helps identify initial representation or outcome disparities even before model training.
   - This initial analysis is crucial for understanding potential sources of bias originating from the data itself.
+
+![Data Analysis 1](media/analysis1.png)
+![Data Analysis 2](media/analysis2.png)
 
 ### 2. Baseline Model Training (`/train_baseline`)
 
@@ -88,6 +93,8 @@ BiasCTRL allows users to apply and evaluate different techniques to reduce unwan
   - Did the mitigation improve fairness for the targeted attribute?
   - Did it inadvertently worsen fairness for other attributes (fairness gerrymandering)?
   - What was the impact on overall accuracy?
+
+![Model Comparison](media/compare.png)
 
 ## Tech Stack
 
