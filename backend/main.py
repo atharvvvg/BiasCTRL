@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Ethical AI Bias Mitigation Workbench API",
+    title="AI Bias Mitigation Workbench API",
     description="Phase 1: Core backend with flexible fairness/explainability.",
     version="0.1.5",
 )
@@ -330,4 +330,4 @@ async def compare_models_endpoint(
 
 @app.get("/", summary="Root endpoint", include_in_schema=False)
 async def read_root():
-    return {"message": "Welcome to the Ethical AI Bias Mitigation Workbench API (v0.1.5)"}
+    return {"message": "Welcome to the AI Bias Mitigation Workbench API (v0.1.5)"}
