@@ -1,6 +1,6 @@
 # BiasCTRL: An Interactive Workbench for AI Development
 
-[![Visits Badge](https://badges.pufler.dev/visits/atharvvvg/BiasCTRL)](https://github.com/atharvvvg/BiasCTRL)
+![Version](https://img.shields.io/badge/version-0.1.5) [![Visits Badge](https://badges.pufler.dev/visits/atharvvvg/BiasCTRL)](https://github.com/atharvvvg/BiasCTRL)
 
 **BiasCTRL is a comprehensive, web-based platform designed to empower developers and data scientists in building fairer and more responsible AI systems. It provides an interactive environment to systematically discover, analyze, visualize, and mitigate biases within machine learning models and the datasets they are trained on.**
 
